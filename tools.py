@@ -12,6 +12,13 @@ try:
 except ImportError:
     openpyxl = None
 
+try:
+    import json
+    from pathlib import Path
+except ImportError:
+    json = None
+    Path = None
+
 def get_weather(city:str) ->str:
     """get the weather for a city"""
     return f"{city}.今天是晴天，温度为25度."
@@ -179,6 +186,141 @@ def save_test_cases_to_excel(
 
     except Exception as e:
         return f"错误: 保存失败 - {str(e)}"
+
+
+def save_and_generate_report(
+    test_cases: List[Dict],
+    chart_html: str = "",
+    file_path: str = "test_report.html",
+    report_title: str = "UI自动化测试报告"
+) -> str:
+    """
+    生成包含图表的HTML测试报告并保存到指定路径
+
+    Args:
+        test_cases: 测试用例列表
+        chart_html: 图表的HTML代码（从mcp-server-chart生成）
+        file_path: 报告保存路径
+        report_title: 报告标题
+
+    Returns:
+        str: 保存结果信息
+    """
+    if not test_cases:
+        return "错误: 测试用例列表为空"
+
+    try:
+        # 统计数据
+        total = len(test_cases)
+        passed = sum(1 for tc in test_cases if tc.get("状态") in ["通过", "Pass", "PASS"] or tc.get("status") in ["通过", "Pass", "PASS"])
+        failed = sum(1 for tc in test_cases if tc.get("状态") in ["失败", "Fail", "FAIL"] or tc.get("status") in ["失败", "Fail", "FAIL"])
+        blocked = sum(1 for tc in test_cases if tc.get("状态") in ["阻塞", "Blocked", "BLOCKED"] or tc.get("status") in ["阻塞", "Blocked", "BLOCKED"])
+        pass_rate = (passed / total * 100) if total > 0 else 0
+
+        # 生成测试用例表格HTML
+        table_rows = ""
+        for tc in test_cases:
+            status = tc.get("状态") or tc.get("status", "")
+            status_class = "pass" if status in ["通过", "Pass", "PASS"] else "fail" if status in ["失败", "Fail", "FAIL"] else "blocked"
+            table_rows += f"""
+            <tr>
+                <td>{tc.get("用例ID") or tc.get("case_id", "")}</td>
+                <td>{tc.get("用例标题") or tc.get("title", "")}</td>
+                <td>{tc.get("测试步骤") or tc.get("steps", "")}</td>
+                <td>{tc.get("预期结果") or tc.get("expected", "")}</td>
+                <td>{tc.get("实际结果") or tc.get("actual", "")}</td>
+                <td class="{status_class}">{status}</td>
+            </tr>
+            """
+
+        # HTML模板
+        html_content = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{report_title}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #333; border-bottom: 3px solid #4472C4; padding-bottom: 10px; }}
+        .summary {{ display: flex; gap: 20px; margin: 20px 0; }}
+        .stat-card {{ flex: 1; padding: 20px; border-radius: 8px; text-align: center; }}
+        .stat-card h3 {{ margin: 0; font-size: 32px; }}
+        .stat-card p {{ margin: 5px 0 0 0; color: #666; }}
+        .total {{ background: #E7F3FF; color: #0066CC; }}
+        .pass {{ background: #E8F5E9; color: #2E7D32; }}
+        .fail {{ background: #FFEBEE; color: #C62828; }}
+        .blocked {{ background: #FFF9E6; color: #F57C00; }}
+        .chart-section {{ margin: 30px 0; padding: 20px; background: #fafafa; border-radius: 8px; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+        th, td {{ padding: 12px; text-align: left; border: 1px solid #ddd; }}
+        th {{ background: #4472C4; color: white; font-weight: bold; }}
+        tr:nth-child(even) {{ background: #f9f9f9; }}
+        .timestamp {{ color: #666; font-size: 14px; margin-top: 20px; text-align: right; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{report_title}</h1>
+
+        <div class="summary">
+            <div class="stat-card total">
+                <h3>{total}</h3>
+                <p>总用例数</p>
+            </div>
+            <div class="stat-card pass">
+                <h3>{passed}</h3>
+                <p>通过</p>
+            </div>
+            <div class="stat-card fail">
+                <h3>{failed}</h3>
+                <p>失败</p>
+            </div>
+            <div class="stat-card blocked">
+                <h3>{blocked}</h3>
+                <p>阻塞</p>
+            </div>
+        </div>
+
+        <div class="stat-card" style="background: #F0F4FF; margin: 20px 0;">
+            <h3>{pass_rate:.1f}%</h3>
+            <p>通过率</p>
+        </div>
+
+        {f'<div class="chart-section"><h2>测试统计图表</h2>{chart_html}</div>' if chart_html else ''}
+
+        <h2>测试用例详情</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>用例ID</th>
+                    <th>用例标题</th>
+                    <th>测试步骤</th>
+                    <th>预期结果</th>
+                    <th>实际结果</th>
+                    <th>状态</th>
+                </tr>
+            </thead>
+            <tbody>
+                {table_rows}
+            </tbody>
+        </table>
+
+        <div class="timestamp">生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
+    </div>
+</body>
+</html>"""
+
+        # 保存文件
+        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+
+        return f"成功: 测试报告已保存到 {os.path.abspath(file_path)}"
+
+    except Exception as e:
+        return f"错误: 生成报告失败 - {str(e)}"
 
 
 # 示例用法
