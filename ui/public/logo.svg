@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="none" aria-hidden="true" role="img" class="iconify iconify--logos" width="32" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 120 60">
+  <!-- 背景圆角矩形 -->
+  <rect
+    x="4"
+    y="4"
+    width="112"
+    height="52"
+    rx="26"
+    fill="#264849"
+    stroke="#1a3334"
+    stroke-width="2"
+  />
+
+  <!-- 装饰性图形元素 -->
+  <circle cx="20" cy="30" r="3" fill="#4a9eff" opacity="0.8" />
+  <circle cx="100" cy="30" r="3" fill="#4a9eff" opacity="0.8" />
+
+  <!-- "但" 字 -->
+  <text
+    x="35"
+    y="38"
+    font-family="serif"
+    font-size="24"
+    font-weight="bold"
+    fill="white"
+    text-anchor="middle"
+  >
+    但
+  </text>
+
+  <!-- "问" 字 -->
+  <text
+    x="85"
+    y="38"
+    font-family="serif"
+    font-size="24"
+    font-weight="bold"
+    fill="white"
+    text-anchor="middle"
+  >
+    问
+  </text>
+
+  <!-- 中间分隔线 -->
+  <line
+    x1="60"
+    y1="18"
+    x2="60"
+    y2="42"
+    stroke="#4a9eff"
+    stroke-width="2"
+    opacity="0.6"
+  />
+</svg>

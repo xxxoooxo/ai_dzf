@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "target": "ES2017"
+  },
+  "_buildId": "id_MC81OmFIVnBZMlhuZzV2bmtJWTZUVGd4TUE9PToxYzY3NGJiOA==",
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "src/hooks/use-threads",
+    "src/app/thread/[threadId]"
+  ],
+  "_deployId": "id_MS81OmFIVnBZMlhuZzV2bmtJWTZUVGd4TUE9PToxYzY3NGJiOA==",
+  "exclude": [
+    "node_modules"
+  ],
+  "_releaseId": "id_Mi81OmFIVnBZMlhuZzV2bmtJWTZUVGd4TUE9PToxYzY3NGJiOA==",
+  "_versionId": "id_My81OmFIVnBZMlhuZzV2bmtJWTZUVGd4TUE9PToxYzY3NGJiOA==",
+  "_buildHash": "NC81OmFIVnBZMlhuZzV2bmtJWTZUVGd4TUE9PToxYzY3NGJiOA=="
+}
