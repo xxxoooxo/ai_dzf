@@ -1,5 +1,5 @@
 from langchain.agents import create_agent
-from file_rag.core.llms import get_default_model
+from src.file_rag.core.llms import get_default_model
 model = get_default_model()
 from tools import (
     get_weather,
