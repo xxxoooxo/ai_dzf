@@ -6,7 +6,7 @@
  * 
  * 授权商业应用请联系微信：huice666
  */
-// @ts-expect-error  MC80OmFIVnBZMlhuZzV2bmtJWTZSRzUyYnc9PTo0MDFkZjBiOQ==
+// NOTE  MC80OmFIVnBZMlhuZzV2bmtJWTZSRzUyYnc9PTo0MDFkZjBiOQ==
 
 import { validate } from "uuid";
 import { getApiKey } from "@/lib/api-key";

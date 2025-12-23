@@ -26,7 +26,7 @@ function isUrl(value: any): boolean {
     return false;
   }
 }
-// @ts-expect-error  Mi80OmFIVnBZMlhuZzV2bmtJWTZTV042TUE9PTpiODIwY2Q5MQ==
+// NOTE  Mi80OmFIVnBZMlhuZzV2bmtJWTZTV042TUE9PTpiODIwY2Q5MQ==
 
 function renderInterruptStateItem(value: any): React.ReactNode {
   if (isComplexValue(value)) {

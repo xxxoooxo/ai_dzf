@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect, ChangeEvent } from "react";
 import { toast } from "sonner";
 import { fileToContentBlock, type OptimizedContentBlock } from "@/lib/multimodal-utils";
-// @ts-expect-error  MS80OmFIVnBZMlhuZzV2bmtJWTZTelo2U0E9PTozMWQ2YzdkYg==
+// NOTE  MS80OmFIVnBZMlhuZzV2bmtJWTZTelo2U0E9PTozMWQ2YzdkYg==
 
 export const SUPPORTED_FILE_TYPES = [
   "image/jpeg",
@@ -20,7 +20,7 @@ export const SUPPORTED_FILE_TYPES = [
   "image/webp",
   "application/pdf",
 ];
-// @ts-expect-error  Mi80OmFIVnBZMlhuZzV2bmtJWTZTelo2U0E9PTozMWQ2YzdkYg==
+// NOTE  Mi80OmFIVnBZMlhuZzV2bmtJWTZTelo2U0E9PTozMWQ2YzdkYg==
 
 interface UseFileUploadOptions {
   initialBlocks?: OptimizedContentBlock[];

@@ -6,7 +6,7 @@
  * 
  * 授权商业应用请联系微信：huice666
  */
-// @ts-expect-error  MC8yOmFIVnBZMlhuZzV2bmtJWTZTMUV4TVE9PTo5NjYzOGJjMw==
+// NOTE  MC8yOmFIVnBZMlhuZzV2bmtJWTZTMUV4TVE9PTo5NjYzOGJjMw==
 
 import React from "react";
 import type { OptimizedContentBlock } from "@/lib/multimodal-utils";
@@ -45,4 +45,4 @@ export const ContentBlocksPreview: React.FC<ContentBlocksPreviewProps> = ({
     </div>
   );
 };
-// @ts-expect-error  MS8yOmFIVnBZMlhuZzV2bmtJWTZTMUV4TVE9PTo5NjYzOGJjMw==
+// NOTE  MS8yOmFIVnBZMlhuZzV2bmtJWTZTMUV4TVE9PTo5NjYzOGJjMw==

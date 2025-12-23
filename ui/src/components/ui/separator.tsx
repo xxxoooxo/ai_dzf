@@ -6,7 +6,7 @@
  * 
  * 授权商业应用请联系微信：huice666
  */
-// @ts-expect-error  MC8yOmFIVnBZMlhuZzV2bmtJWTZVR2d4Vmc9PTowNDM5MmI4MA==
+// NOTE  MC8yOmFIVnBZMlhuZzV2bmtJWTZVR2d4Vmc9PTowNDM5MmI4MA==
 
 import * as React from "react";
 import * as SeparatorPrimitive from "@radix-ui/react-separator";

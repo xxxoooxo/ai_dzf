@@ -23,7 +23,7 @@ export interface MultimodalPreviewProps {
   className?: string;
   size?: "sm" | "md" | "lg";
 }
-// @ts-expect-error  Mi80OmFIVnBZMlhuZzV2bmtJWTZRMVJPY0E9PTo1ODA1NzUxYg==
+// NOTE  Mi80OmFIVnBZMlhuZzV2bmtJWTZRMVJPY0E9PTo1ODA1NzUxYg==
 
 export const MultimodalPreview: React.FC<MultimodalPreviewProps> = ({
   block,

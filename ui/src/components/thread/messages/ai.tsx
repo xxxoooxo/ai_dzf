@@ -6,7 +6,7 @@
  * 
  * 授权商业应用请联系微信：huice666
  */
-// @ts-expect-error  MC80OmFIVnBZMlhuZzV2bmtJWTZNVWxYY2c9PTo5ZTdmN2ZkZA==
+// NOTE  MC80OmFIVnBZMlhuZzV2bmtJWTZNVWxYY2c9PTo5ZTdmN2ZkZA==
 
 import { parsePartialJson } from "@langchain/core/output_parsers";
 import { useStreamContext } from "@/providers/Stream";
@@ -24,6 +24,7 @@ import { ThreadView } from "../agent-inbox";
 import { useQueryState, parseAsBoolean } from "nuqs";
 import { GenericInterruptView } from "./generic-interrupt";
 import { useArtifact } from "../artifact";
+import { useRafThrottledValue } from "@/hooks/useRafThrottledValue";
 
 function CustomComponent({
   message,
@@ -52,7 +53,7 @@ function CustomComponent({
     </Fragment>
   );
 }
-// @ts-expect-error  MS80OmFIVnBZMlhuZzV2bmtJWTZNVWxYY2c9PTo5ZTdmN2ZkZA==
+// NOTE  MS80OmFIVnBZMlhuZzV2bmtJWTZNVWxYY2c9PTo5ZTdmN2ZkZA==
 
 function parseAnthropicStreamedToolCalls(
   content: MessageContentComplex[],
@@ -124,13 +125,32 @@ export function AssistantMessage({
   );
 
   const thread = useStreamContext();
-  const isLastMessage =
-    thread.messages[thread.messages.length - 1].id === message?.id;
+  const lastMessageId = thread.messages[thread.messages.length - 1]?.id;
+  const isLastMessage = !!lastMessageId && lastMessageId === message?.id;
   const hasNoAIOrToolMessages = !thread.messages.find(
     (m) => m.type === "ai" || m.type === "tool",
   );
   const meta = message ? thread.getMessagesMetadata(message) : undefined;
   const threadInterrupt = thread.interrupt;
+  const isStreamingMessage = isLoading && isLastMessage;
+
+  // Rendering very large markdown synchronously (plus code highlighting/math) can block the main thread
+  // long enough to trigger Chrome's "Page unresponsive" prompt. Degrade to plain text for streaming/large payloads.
+  const MAX_MARKDOWN_RENDER_CHARS = 80_000;
+  const MAX_STREAMING_RENDER_CHARS = 30_000;
+  const MAX_PLAINTEXT_RENDER_CHARS = 200_000;
+  const shouldRenderMarkdown =
+    !isStreamingMessage && contentString.length <= MAX_MARKDOWN_RENDER_CHARS;
+  const plainText =
+    isStreamingMessage && contentString.length > MAX_STREAMING_RENDER_CHARS
+      ? contentString.slice(-MAX_STREAMING_RENDER_CHARS)
+      : contentString.length > MAX_PLAINTEXT_RENDER_CHARS
+        ? contentString.slice(-MAX_PLAINTEXT_RENDER_CHARS)
+        : contentString;
+  const throttledPlainText = useRafThrottledValue(plainText);
+  const isTruncated =
+    (isStreamingMessage && contentString.length > MAX_STREAMING_RENDER_CHARS) ||
+    (!isStreamingMessage && contentString.length > MAX_PLAINTEXT_RENDER_CHARS);
 
   const parentCheckpoint = meta?.firstSeenState?.parent_checkpoint;
   const anthropicStreamedToolCalls = Array.isArray(content)
@@ -161,7 +181,29 @@ export function AssistantMessage({
           <>
             {contentString.length > 0 && (
               <div className="py-1">
-                <MarkdownText>{contentString}</MarkdownText>
+                {shouldRenderMarkdown ? (
+                  <MarkdownText>{contentString}</MarkdownText>
+                ) : (
+                  <div className="bg-muted/30 rounded-xl px-4 py-3">
+                    <pre className="m-0 whitespace-pre-wrap break-words text-sm leading-6">
+                      {throttledPlainText}
+                    </pre>
+                    {isTruncated && (
+                      <p className="text-muted-foreground mt-2 text-xs">
+                        {isStreamingMessage
+                          ? `为保证流畅输出，仅显示最后 ${MAX_STREAMING_RENDER_CHARS.toLocaleString()} 个字符（总计 ${contentString.length.toLocaleString()}）。`
+                          : `内容过大，已切换为纯文本并仅显示最后 ${MAX_PLAINTEXT_RENDER_CHARS.toLocaleString()} 个字符（总计 ${contentString.length.toLocaleString()}）。`}
+                      </p>
+                    )}
+                    {!isStreamingMessage &&
+                      !isTruncated &&
+                      contentString.length > MAX_MARKDOWN_RENDER_CHARS && (
+                        <p className="text-muted-foreground mt-2 text-xs">
+                          内容较大，已切换为纯文本渲染以避免卡顿。
+                        </p>
+                      )}
+                  </div>
+                )}
               </div>
             )}
 

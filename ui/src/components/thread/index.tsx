@@ -6,7 +6,7 @@
  * 
  * 授权商业应用请联系微信：huice666
  */
-// @ts-expect-error  MC80OmFIVnBZMlhuZzV2bmtJWTZRVE0zV2c9PTpiZmM3ZmVhYw==
+// NOTE  MC80OmFIVnBZMlhuZzV2bmtJWTZRVE0zV2c9PTpiZmM3ZmVhYw==
 
 import { v4 as uuidv4 } from "uuid";
 import { ReactNode, useEffect, useRef } from "react";
@@ -97,7 +97,7 @@ function ScrollToBottom(props: { className?: string }) {
     </Button>
   );
 }
-// @ts-expect-error  Mi80OmFIVnBZMlhuZzV2bmtJWTZRVE0zV2c9PTpiZmM3ZmVhYw==
+// NOTE  Mi80OmFIVnBZMlhuZzV2bmtJWTZRVE0zV2c9PTpiZmM3ZmVhYw==
 
 function OpenGitHubRepo() {
   return (

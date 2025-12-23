@@ -12,7 +12,7 @@ import tsx from "react-syntax-highlighter/dist/esm/languages/prism/tsx";
 import python from "react-syntax-highlighter/dist/esm/languages/prism/python";
 import { coldarkDark } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { FC } from "react";
-// @ts-expect-error  MC8yOmFIVnBZMlhuZzV2bmtJWTZRVGwyUWc9PTo5MzJhMzVlNg==
+// NOTE  MC8yOmFIVnBZMlhuZzV2bmtJWTZRVGwyUWc9PTo5MzJhMzVlNg==
 
 // Register languages you want to support
 SyntaxHighlighterPrism.registerLanguage("js", tsx);
@@ -48,4 +48,4 @@ export const SyntaxHighlighter: FC<SyntaxHighlighterProps> = ({
     </SyntaxHighlighterPrism>
   );
 };
-// @ts-expect-error  MS8yOmFIVnBZMlhuZzV2bmtJWTZRVGwyUWc9PTo5MzJhMzVlNg==
+// NOTE  MS8yOmFIVnBZMlhuZzV2bmtJWTZRVGwyUWc9PTo5MzJhMzVlNg==

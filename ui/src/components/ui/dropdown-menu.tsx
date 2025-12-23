@@ -149,7 +149,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   </DropdownMenuPrimitive.RadioItem>
 ))
 DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName
-// @ts-expect-error  My80OmFIVnBZMlhuZzV2bmtJWTZRV2x4YWc9PTozZjZiZGUxNA==
+// NOTE  My80OmFIVnBZMlhuZzV2bmtJWTZRV2x4YWc9PTozZjZiZGUxNA==
 
 const DropdownMenuLabel = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Label>,

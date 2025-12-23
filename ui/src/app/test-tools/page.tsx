@@ -14,7 +14,7 @@ import { ToolCalls } from "@/components/thread/messages/tool-calls-new";
 import { AIMessage, ToolMessage } from "@langchain/langgraph-sdk";
 
 // Mock data for testing
-const mockToolCalls: AIMessage["tool_calls"] = [
+const mockToolCalls: NonNullable<AIMessage["tool_calls"]> = [
   {
     name: "chrome_navigate",
     args: {
@@ -81,7 +81,7 @@ const mockToolResultWithImage: ToolMessage = {
 // NOTE  MS80OmFIVnBZMlhuZzV2bmtJWTZVekZhUkE9PTpjYjNkZmY5OQ==
 
 // Additional mock tool calls to match the expected format
-const mockExpandedToolCall: AIMessage["tool_calls"][0] = {
+const mockExpandedToolCall: NonNullable<AIMessage["tool_calls"]>[0] = {
   name: "chrome_navigate",
   args: {
     url: "https://www.baidu.com"
@@ -91,7 +91,7 @@ const mockExpandedToolCall: AIMessage["tool_calls"][0] = {
 // TODO  Mi80OmFIVnBZMlhuZzV2bmtJWTZVekZhUkE9PTpjYjNkZmY5OQ==
 
 // Mock tool call with screenshot
-const mockScreenshotToolCall: AIMessage["tool_calls"][0] = {
+const mockScreenshotToolCall: NonNullable<AIMessage["tool_calls"]>[0] = {
   name: "screenshot_tool",
   args: {
     element: "body",
@@ -139,7 +139,7 @@ const mockToolResultWithUrlImages: ToolMessage = {
 };
 
 // Mock tool call for image analysis
-const mockImageAnalysisToolCall: AIMessage["tool_calls"][0] = {
+const mockImageAnalysisToolCall: NonNullable<AIMessage["tool_calls"]>[0] = {
   name: "image_analysis_tool",
   args: {
     analyze_screenshots: true,

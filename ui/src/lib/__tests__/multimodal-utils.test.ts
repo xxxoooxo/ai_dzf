@@ -35,7 +35,7 @@ global.FileReader = class {
     }, 0);
   }
 } as any;
-// @ts-expect-error  My80OmFIVnBZMlhuZzV2bmtJWTZOVWxSZGc9PTowMzA1MTMwZA==
+// NOTE  My80OmFIVnBZMlhuZzV2bmtJWTZOVWxSZGc9PTowMzA1MTMwZA==
 
 describe('multimodal-utils', () => {
   describe('fileToContentBlock', () => {

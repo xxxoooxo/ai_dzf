@@ -16,4 +16,4 @@ export function createClient(apiUrl: string, apiKey: string | undefined) {
     apiUrl,
   });
 }
-// @ts-expect-error  MS8yOmFIVnBZMlhuZzV2bmtJWTZTV2x6Y2c9PTpjY2JmYjhjZg==
+// NOTE  MS8yOmFIVnBZMlhuZzV2bmtJWTZTV2x6Y2c9PTpjY2JmYjhjZg==

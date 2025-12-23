@@ -41,7 +41,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-// @ts-expect-error  MS80OmFIVnBZMlhuZzV2bmtJWTZZM2hsV1E9PTowZmNlNDU3OQ==
+// NOTE  MS80OmFIVnBZMlhuZzV2bmtJWTZZM2hsV1E9PTowZmNlNDU3OQ==
 
 function ThreadList({
   threads,
@@ -181,7 +181,7 @@ function ThreadList({
     </>
   );
 }
-// @ts-expect-error  Mi80OmFIVnBZMlhuZzV2bmtJWTZZM2hsV1E9PTowZmNlNDU3OQ==
+// NOTE  Mi80OmFIVnBZMlhuZzV2bmtJWTZZM2hsV1E9PTowZmNlNDU3OQ==
 
 function ThreadHistoryLoading() {
   return (

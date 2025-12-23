@@ -9,7 +9,7 @@
 
 import { useTheme } from "next-themes";
 import { Toaster as Sonner, ToasterProps } from "sonner";
-// @ts-expect-error  MC8yOmFIVnBZMlhuZzV2bmtJWTZNMVpLYkE9PTozY2M4ZjFjZA==
+// NOTE  MC8yOmFIVnBZMlhuZzV2bmtJWTZNMVpLYkE9PTozY2M4ZjFjZA==
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme();

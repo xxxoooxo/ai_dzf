@@ -6,7 +6,7 @@
  * 
  * 授权商业应用请联系微信：huice666
  */
-// @ts-expect-error  MC8yOmFIVnBZMlhuZzV2bmtJWTZPVEJQZGc9PTpmYzQ0ZGM0Yg==
+// NOTE  MC8yOmFIVnBZMlhuZzV2bmtJWTZPVEJQZGc9PTpmYzQ0ZGM0Yg==
 
 import { useEffect, useState } from "react";
 
@@ -24,4 +24,4 @@ export function useMediaQuery(query: string) {
 
   return matches;
 }
-// @ts-expect-error  MS8yOmFIVnBZMlhuZzV2bmtJWTZPVEJQZGc9PTpmYzQ0ZGM0Yg==
+// NOTE  MS8yOmFIVnBZMlhuZzV2bmtJWTZPVEJQZGc9PTpmYzQ0ZGM0Yg==

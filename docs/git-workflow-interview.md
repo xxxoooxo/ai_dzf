@@ -205,3 +205,51 @@ git push -u origin <branch>
 git config --local --unset http.proxy
 git config --local --unset https.proxy
 ```
+
+---
+
+## 10. 实战：误把 `ui/node_modules` / `ui/.next` 提交进仓库（如何治理）
+
+### 10.1 典型症状
+
+- `git status`/`git diff` 变得极慢，动辄上万文件变更。
+- 运行一次 `next dev` 就产生大量 `.next` 变更；安装依赖会产生大量 `node_modules` 变更。
+- 即使 `.gitignore` 里写了忽略规则，`git status` 仍然显示这些目录的改动（原因：**它们已经被 Git 跟踪 tracked 了**）。
+
+### 10.2 诊断（确认是否被跟踪）
+
+1. 确认 `.gitignore` 是否已有忽略规则（示例）：
+
+```powershell
+rg -n "(^|/)ui/(\\.next|node_modules)" ".gitignore"
+```
+
+2. 统计当前被 Git 跟踪的数量（Windows PowerShell）：
+
+```powershell
+git ls-files "ui/.next" | Measure-Object | Select-Object -ExpandProperty Count
+git ls-files "ui/node_modules" | Measure-Object | Select-Object -ExpandProperty Count
+```
+
+### 10.3 修复（从索引移除，但保留本地文件）
+
+关键点：用 `--cached` 只影响 Git 索引，不会删除你本地的文件夹。
+
+```powershell
+git rm -r --cached -- "ui/node_modules" "ui/.next"
+git commit -m "chore(ui): 停止跟踪构建产物与依赖目录"
+git push
+```
+
+### 10.4 之后如何“只提交 UI 源码”
+
+```powershell
+git add -- "ui/src" "ui/next-env.d.ts"
+git diff --cached --name-status
+git commit -m "feat(ui): 更新交互与渲染"
+git push
+```
+
+说明：
+- `.gitignore` 负责“忽略未跟踪文件”；对已跟踪文件无效，必须配合 `git rm --cached`。
+- 仓库变更较大时建议在分支上做，并在 PR 里明确说明：依赖与构建产物已从版本库移除，拉取后需要自行 `install`/`build`。

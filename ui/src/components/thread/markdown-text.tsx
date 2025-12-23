@@ -272,6 +272,19 @@ const defaultComponents: any = {
 };
 
 const MarkdownTextImpl: FC<{ children: string }> = ({ children }) => {
+  const MAX_MARKDOWN_RENDER_CHARS = 80_000;
+
+  // Safety valve: parsing huge markdown (with GFM/math/highlighting) can block the main thread.
+  if (children.length > MAX_MARKDOWN_RENDER_CHARS) {
+    return (
+      <div className="markdown-content">
+        <pre className="m-0 whitespace-pre-wrap break-words text-sm leading-6">
+          {children}
+        </pre>
+      </div>
+    );
+  }
+
   return (
     <div className="markdown-content">
       <ReactMarkdown

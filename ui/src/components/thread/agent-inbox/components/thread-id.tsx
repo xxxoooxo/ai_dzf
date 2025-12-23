@@ -39,7 +39,7 @@ export function ThreadIdTooltip({ threadId }: { threadId: string }) {
     </TooltipProvider>
   );
 }
-// @ts-expect-error  Mi80OmFIVnBZMlhuZzV2bmtJWTZkMHRhTVE9PTo4YThjYzkwZQ==
+// NOTE  Mi80OmFIVnBZMlhuZzV2bmtJWTZkMHRhTVE9PTo4YThjYzkwZQ==
 
 export function ThreadIdCopyable({
   threadId,

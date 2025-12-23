@@ -22,7 +22,7 @@ import { TooltipIconButton } from "../tooltip-icon-button";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-// @ts-expect-error  MS80OmFIVnBZMlhuZzV2bmtJWTZXVkZ4ZFE9PTphNzI0MmQxNw==
+// NOTE  MS80OmFIVnBZMlhuZzV2bmtJWTZXVkZ4ZFE9PTphNzI0MmQxNw==
 
 function ContentCopyable({
   content,

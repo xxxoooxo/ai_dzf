@@ -6,7 +6,7 @@
  * 
  * 授权商业应用请联系微信：huice666
  */
-// @ts-expect-error  MC8yOmFIVnBZMlhuZzV2bmtJWTZkekZyZGc9PTpkMjNkMWJhMw==
+// NOTE  MC8yOmFIVnBZMlhuZzV2bmtJWTZkekZyZGc9PTpkMjNkMWJhMw==
 
 export const GitHubSVG = ({ width = "100%", height = "100%" }) => (
   <svg

@@ -54,7 +54,7 @@ export type ThreadData<
       interrupts?: never;
     }
 );
-// @ts-expect-error  Mi80OmFIVnBZMlhuZzV2bmtJWTZRV0ZIYXc9PTo3YzY2NGZhZg==
+// NOTE  Mi80OmFIVnBZMlhuZzV2bmtJWTZRV0ZIYXc9PTo3YzY2NGZhZg==
 
 export type ThreadStatusWithAll = ThreadStatus | "all";
 

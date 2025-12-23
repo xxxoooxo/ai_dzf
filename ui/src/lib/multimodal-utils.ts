@@ -21,7 +21,7 @@ export interface ImageUrlContentBlock {
     };
   };
 }
-// @ts-expect-error  MS80OmFIVnBZMlhuZzV2bmtJWTZhbkZ0V0E9PTozOTc3ZWFlOQ==
+// NOTE  MS80OmFIVnBZMlhuZzV2bmtJWTZhbkZ0V0E9PTozOTc3ZWFlOQ==
 
 // 定义文件内容块类型
 export interface FileContentBlock {

@@ -20,7 +20,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-// @ts-expect-error  MC80OmFIVnBZMlhuZzV2bmtJWTZWMWh5TXc9PTo0ZGMwZWIxMw==
+// NOTE  MC80OmFIVnBZMlhuZzV2bmtJWTZWMWh5TXc9PTo0ZGMwZWIxMw==
 
 type Setter<T> = (value: T | ((value: T) => T)) => void;
 

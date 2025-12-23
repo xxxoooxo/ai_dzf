@@ -23,102 +23,133 @@ import {
 } from "lucide-react";
 import { AIMessage, ToolMessage } from "@langchain/langgraph-sdk";
 
+const MAX_AUTO_IMAGE_SCAN_CHARS = 200_000;
+const MAX_LONG_BASE64_SCAN_CHARS = 50_000;
+const MAX_JSON_PARSE_CHARS = 200_000;
+
 // Helper function to detect and extract images from text (both base64 and URLs)
 function extractImagesFromText(text: string): Array<{ data: string; type: string; original: string; isUrl: boolean }> {
+  if (!text) return [];
+  if (text.length > MAX_AUTO_IMAGE_SCAN_CHARS) return [];
+
+  const mayHaveDataUrl = text.includes("data:image");
+  const mayHaveHttp = text.includes("http://") || text.includes("https://");
+  const mayHaveBase64 =
+    text.includes("base64") ||
+    text.includes("iVBORw0KGgo") ||
+    text.includes("/9j/") ||
+    text.includes("R0lGOD") ||
+    text.includes("UklGR");
+
+  // Fast-path: skip heavy regex scanning when there's no obvious marker.
+  if (!mayHaveDataUrl && !mayHaveHttp && !mayHaveBase64) return [];
+
   const images: Array<{ data: string; type: string; original: string; isUrl: boolean }> = [];
 
   // Pattern 1: Standard data URL format
-  const dataUrlPattern = /data:image\/(png|jpeg|jpg|gif|webp|bmp);base64,([A-Za-z0-9+/=]+)/gi;
-  let match;
-  while ((match = dataUrlPattern.exec(text)) !== null) {
-    images.push({
-      data: match[0],
-      type: match[1],
-      original: match[0],
-      isUrl: false
-    });
-  }
-
-  // Pattern 2: HTTP/HTTPS image URLs
-  const imageUrlPattern = /https?:\/\/[^\s<>"']+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?[^\s<>"']*)?(?:#[^\s<>"']*)?/gi;
-  while ((match = imageUrlPattern.exec(text)) !== null) {
-    const url = match[0];
-    const extension = url.match(/\.([^.?#]+)(?:\?|#|$)/)?.[1]?.toLowerCase() || 'unknown';
-    images.push({
-      data: url,
-      type: extension,
-      original: url,
-      isUrl: true
-    });
-  }
-
-  // Pattern 3: URLs that might be images (common image hosting patterns)
-  const possibleImageUrlPatterns = [
-    // Alipay CDN pattern (like the example provided)
-    /https?:\/\/[^\s<>"']*\.alipayobjects\.com\/[^\s<>"']+/gi,
-    // Common image hosting patterns
-    /https?:\/\/[^\s<>"']*(?:imgur|cloudinary|amazonaws|googleusercontent|github|githubusercontent)\.com\/[^\s<>"']+/gi,
-    // Generic patterns that often contain images
-    /https?:\/\/[^\s<>"']*\/[^\s<>"']*(?:image|img|photo|picture|screenshot|pic)[^\s<>"']*/gi,
-  ];
-
-  possibleImageUrlPatterns.forEach(pattern => {
-    let urlMatch;
-    while ((urlMatch = pattern.exec(text)) !== null) {
-      const url = urlMatch[0];
-      // Avoid duplicates
-      if (!images.some(img => img.data === url)) {
-        images.push({
-          data: url,
-          type: 'unknown',
-          original: url,
-          isUrl: true
-        });
-      }
-    }
-  });
-
-  // Pattern 4: JSON field with base64 data (common patterns)
-  const jsonPatterns = [
-    /"base64Data":\s*"([A-Za-z0-9+/=]{100,})"/gi,
-    /"base64":\s*"([A-Za-z0-9+/=]{100,})"/gi,
-    /"image":\s*"([A-Za-z0-9+/=]{100,})"/gi,
-    /"screenshot":\s*"([A-Za-z0-9+/=]{100,})"/gi,
-    /"imageData":\s*"([A-Za-z0-9+/=]{100,})"/gi
-  ];
-
-  jsonPatterns.forEach(pattern => {
-    let jsonMatch;
-    while ((jsonMatch = pattern.exec(text)) !== null) {
-      const base64Data = jsonMatch[1];
-      // Validate base64 format and reasonable length
-      if (base64Data.length > 100 && base64Data.length % 4 === 0) {
-        images.push({
-          data: `data:image/png;base64,${base64Data}`,
-          type: 'png',
-          original: jsonMatch[0],
-          isUrl: false
-        });
-      }
-    }
-  });
-
-  // Pattern 5: Look for very long base64 strings that might be images
-  const longBase64Pattern = /([A-Za-z0-9+/=]{1000,})/g;
-  while ((match = longBase64Pattern.exec(text)) !== null) {
-    const base64Data = match[1];
-    // Additional validation: check if it starts with common image signatures
-    if (base64Data.length % 4 === 0 &&
-        (base64Data.startsWith('iVBORw0KGgo') || // PNG
-         base64Data.startsWith('/9j/') || // JPEG
-         base64Data.startsWith('R0lGOD') || // GIF
-         base64Data.startsWith('UklGR'))) { // WebP
+  if (mayHaveDataUrl) {
+    const dataUrlPattern = /data:image\/(png|jpeg|jpg|gif|webp|bmp);base64,([A-Za-z0-9+/=]+)/gi;
+    let match;
+    while ((match = dataUrlPattern.exec(text)) !== null) {
       images.push({
-        data: `data:image/png;base64,${base64Data}`,
-        type: 'png',
+        data: match[0],
+        type: match[1],
         original: match[0],
         isUrl: false
       });
+    }
+  }
+
+  // Pattern 2: HTTP/HTTPS image URLs
+  if (mayHaveHttp) {
+    const imageUrlPattern = /https?:\/\/[^\s<>"']+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?[^\s<>"']*)?(?:#[^\s<>"']*)?/gi;
+    let match;
+    while ((match = imageUrlPattern.exec(text)) !== null) {
+      const url = match[0];
+      const extension = url.match(/\.([^.?#]+)(?:\?|#|$)/)?.[1]?.toLowerCase() || 'unknown';
+      images.push({
+        data: url,
+        type: extension,
+        original: url,
+        isUrl: true
+      });
+    }
+  }
+
+  // Pattern 3: URLs that might be images (common image hosting patterns)
+  if (mayHaveHttp) {
+    const possibleImageUrlPatterns = [
+      // Alipay CDN pattern (like the example provided)
+      /https?:\/\/[^\s<>"']*\.alipayobjects\.com\/[^\s<>"']+/gi,
+      // Common image hosting patterns
+      /https?:\/\/[^\s<>"']*(?:imgur|cloudinary|amazonaws|googleusercontent|github|githubusercontent)\.com\/[^\s<>"']+/gi,
+      // Generic patterns that often contain images
+      /https?:\/\/[^\s<>"']*\/[^\s<>"']*(?:image|img|photo|picture|screenshot|pic)[^\s<>"']*/gi,
+    ];
+
+    possibleImageUrlPatterns.forEach(pattern => {
+      let urlMatch;
+      while ((urlMatch = pattern.exec(text)) !== null) {
+        const url = urlMatch[0];
+        // Avoid duplicates
+        if (!images.some(img => img.data === url)) {
+          images.push({
+            data: url,
+            type: 'unknown',
+            original: urlMatch[0],
+            isUrl: true
+          });
+        }
+      }
+    });
+  }
+
+  // Pattern 4: JSON field with base64 data (common patterns)
+  if (mayHaveBase64) {
+    const jsonPatterns = [
+      /"base64Data":\s*"([A-Za-z0-9+/=]{100,})"/gi,
+      /"base64":\s*"([A-Za-z0-9+/=]{100,})"/gi,
+      /"image":\s*"([A-Za-z0-9+/=]{100,})"/gi,
+      /"screenshot":\s*"([A-Za-z0-9+/=]{100,})"/gi,
+      /"imageData":\s*"([A-Za-z0-9+/=]{100,})"/gi
+    ];
+
+    jsonPatterns.forEach(pattern => {
+      let jsonMatch;
+      while ((jsonMatch = pattern.exec(text)) !== null) {
+        const base64Data = jsonMatch[1];
+        // Validate base64 format and reasonable length
+        if (base64Data.length > 100 && base64Data.length % 4 === 0) {
+          images.push({
+            data: `data:image/png;base64,${base64Data}`,
+            type: 'png',
+            original: jsonMatch[0],
+            isUrl: false
+          });
+        }
+      }
+    });
+  }
+
+  // Pattern 5: Look for very long base64 strings that might be images
+  if (mayHaveBase64 && text.length <= MAX_LONG_BASE64_SCAN_CHARS) {
+    const longBase64Pattern = /([A-Za-z0-9+/=]{1000,})/g;
+    let match;
+    while ((match = longBase64Pattern.exec(text)) !== null) {
+      const base64Data = match[1];
+      // Additional validation: check if it starts with common image signatures
+      if (base64Data.length % 4 === 0 &&
+          (base64Data.startsWith('iVBORw0KGgo') || // PNG
+           base64Data.startsWith('/9j/') || // JPEG
+           base64Data.startsWith('R0lGOD') || // GIF
+           base64Data.startsWith('UklGR'))) { // WebP
+        images.push({
+          data: `data:image/png;base64,${base64Data}`,
+          type: 'png',
+          original: match[0],
+          isUrl: false
+        });
+      }
     }
   }
 
@@ -164,7 +195,7 @@ function ImagePreviewModal({
     </div>
   );
 }
-// @ts-expect-error  MS80OmFIVnBZMlhuZzV2bmtJWTZkRW95WVE9PTphYTE1ZTE3Zg==
+// NOTE  MS80OmFIVnBZMlhuZzV2bmtJWTZkRW95WVE9PTphYTE1ZTE3Zg==
 
 // Image Display Component
 function ImagePreview({ images }: { images: Array<{ data: string; type: string; original: string; isUrl: boolean }> }) {
@@ -254,29 +285,34 @@ interface ToolCallBoxProps {
 export const ToolCallBox = React.memo<ToolCallBoxProps>(({ toolCall, toolResult }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const { name, args, result, status, resultText, images } = useMemo(() => {
+  const { name, args, result, status, images } = useMemo(() => {
     const toolName = toolCall?.name?.trim() || "Unknown Tool";
     const toolArgs = toolCall?.args || {};
 
-    let toolResult_content = null;
+    let toolResult_content: unknown = null;
     let resultAsText = "";
 
     if (toolResult) {
-      try {
-        if (typeof toolResult.content === "string") {
-          toolResult_content = JSON.parse(toolResult.content);
-          resultAsText = toolResult.content;
+      if (typeof toolResult.content === "string") {
+        const rawText = toolResult.content;
+        resultAsText = rawText;
+        if (rawText.length <= MAX_JSON_PARSE_CHARS) {
+          try {
+            toolResult_content = JSON.parse(rawText);
+          } catch {
+            toolResult_content = rawText;
+          }
         } else {
-          toolResult_content = toolResult.content;
-          resultAsText = JSON.stringify(toolResult.content, null, 2);
+          toolResult_content = rawText;
         }
-      } catch {
+      } else {
         toolResult_content = toolResult.content;
-        resultAsText = String(toolResult.content);
+        // Avoid JSON stringify work unless the user expands the details.
+        resultAsText = isExpanded ? JSON.stringify(toolResult.content, null, 2) : "";
       }
     }
 
-    // Extract images from the result text
+    // Extract images from the result text (guarded by size & marker checks inside).
     const extractedImages = resultAsText ? extractImagesFromText(resultAsText) : [];
 
     const toolStatus = "completed"; // Default status
@@ -286,10 +322,9 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(({ toolCall, toolResult 
       args: toolArgs,
       result: toolResult_content,
       status: toolStatus,
-      resultText: resultAsText,
       images: extractedImages,
     };
-  }, [toolCall, toolResult]);
+  }, [isExpanded, toolCall, toolResult]);
 
   const statusIcon = useMemo(() => {
     const iconProps = { className: "w-3.5 h-3.5" };
@@ -310,7 +345,7 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(({ toolCall, toolResult 
     setIsExpanded((prev) => !prev);
   }, []);
 
-  const hasContent = result || Object.keys(args).length > 0 || images.length > 0;
+  const hasContent = result != null || Object.keys(args).length > 0 || images.length > 0;
 
   return (
     <div className="w-full mb-2">
@@ -342,7 +377,7 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(({ toolCall, toolResult 
                 </pre>
               </div>
             )}
-            {result && (
+            {result != null && (
               <div className="mt-4">
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   RESULT
@@ -398,7 +433,7 @@ export function ToolCalls({
     </div>
   );
 }
-// @ts-expect-error  My80OmFIVnBZMlhuZzV2bmtJWTZkRW95WVE9PTphYTE1ZTE3Zg==
+// NOTE  My80OmFIVnBZMlhuZzV2bmtJWTZkRW95WVE9PTphYTE1ZTE3Zg==
 
 // Keep the old ToolResult component for backward compatibility
 export function ToolResult({ message }: { message: ToolMessage }) {

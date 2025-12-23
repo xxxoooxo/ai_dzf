@@ -12,7 +12,7 @@ import * as LabelPrimitive from "@radix-ui/react-label";
 // eslint-disable  MC8yOmFIVnBZMlhuZzV2bmtJWTZhMFIzZUE9PTphZTIyMWQ2ZA==
 
 import { cn } from "@/lib/utils";
-// @ts-expect-error  MS8yOmFIVnBZMlhuZzV2bmtJWTZhMFIzZUE9PTphZTIyMWQ2ZA==
+// NOTE  MS8yOmFIVnBZMlhuZzV2bmtJWTZhMFIzZUE9PTphZTIyMWQ2ZA==
 
 function Label({
   className,

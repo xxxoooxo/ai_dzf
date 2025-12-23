@@ -17,7 +17,7 @@ import { MarkdownText } from "../../markdown-text";
 import { ActionRequest, HumanInterrupt } from "@langchain/langgraph/prebuilt";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
-// @ts-expect-error  MC80OmFIVnBZMlhuZzV2bmtJWTZVbWt3ZFE9PTphOTk1MWI5Mg==
+// NOTE  MC80OmFIVnBZMlhuZzV2bmtJWTZVbWt3ZFE9PTphOTk1MWI5Mg==
 
 function ResetButton({ handleReset }: { handleReset: () => void }) {
   return (
