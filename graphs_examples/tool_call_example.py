@@ -56,11 +56,98 @@ tools = [add, multiply,divide]
 tool_node = ToolNode(tools)
 
 
+def _stringify_content(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _extract_all_text(messages) -> str:
+    chunks: list[str] = []
+    for msg in messages or []:
+        content = getattr(msg, "content", None)
+        if isinstance(content, str):
+            chunks.append(content)
+            continue
+        if isinstance(content, list):
+            # block content: try text field, else stringify block
+            for b in content:
+                if isinstance(b, dict) and isinstance(b.get("text"), str):
+                    chunks.append(b["text"])
+                else:
+                    chunks.append(_stringify_content(b))
+            continue
+        chunks.append(_stringify_content(content))
+    return "\n".join(chunks)
+
+
+def _strip_md(value: str) -> str:
+    s = (value or "").strip()
+    if s.startswith("**") and s.endswith("**") and len(s) >= 4:
+        s = s[2:-2].strip()
+    return s
+
+
+def _parse_test_cases_from_markdown(text: str) -> list[dict]:
+    """
+    解析 Markdown 表格里的测试用例行：
+    | **TC-XXX** | **标题** <br>1... | 预期... | P0 | 测试类型 |
+
+    只做必要的健壮性处理：不依赖 LLM，保证可重复。
+    """
+    import re
+
+    rows: list[dict] = []
+    if not text:
+        return rows
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not (line.startswith("|") and "TC-" in line):
+            continue
+
+        parts = [p.strip() for p in line.strip("|").split("|")]
+        if len(parts) < 3:
+            continue
+
+        case_id = _strip_md(parts[0])
+        if not case_id.startswith("TC-"):
+            continue
+
+        title_and_steps = parts[1]
+        segs = [s.strip() for s in title_and_steps.split("<br>") if s.strip()]
+        title = _strip_md(segs[0]) if segs else _strip_md(title_and_steps)
+        steps = "\n".join(segs[1:]) if len(segs) > 1 else ""
+        steps = re.sub(r"<br\s*/?>", "\n", steps)
+
+        expected = re.sub(r"<br\s*/?>", "\n", parts[2]).strip()
+        expected = _strip_md(expected)
+
+        priority = _strip_md(parts[3]) if len(parts) >= 4 else ""
+        test_type = _strip_md(parts[4]) if len(parts) >= 5 else ""
+
+        rows.append(
+            {
+                "用例ID": case_id,
+                "用例标题": title,
+                "测试步骤": steps,
+                "预期结果": expected,
+                "优先级": priority,
+                "测试类型": test_type,
+            }
+        )
+
+    return rows
+
+
 def write_excel_node(state: TestCaseState):
-    """使用 agent 智能解析并保存测试用例到Excel"""
+    """保存评审后的结果到 Excel（测试用例 + 评审记录）"""
     from langchain_core.messages import HumanMessage
     import hashlib
     import os
+    from datetime import datetime
 
     # 计算当前 PRD 的 hash（用第一条消息作为 PRD 标识）
     first_message = state["messages"][0].content if state["messages"] else ""
@@ -78,8 +165,38 @@ def write_excel_node(state: TestCaseState):
     # 决定写入模式
     if is_new_prd or not file_exists:
         mode_instruction = "覆盖写入（清空旧数据）"
+        mode = "overwrite"
     else:
         mode_instruction = "追加写入（保留旧数据，添加新用例）"
+        mode = "append"
+
+    # 1) 优先走确定性解析：从消息文本中解析 Markdown 测试用例表格
+    all_text = _extract_all_text(state.get("messages", []))
+    parsed_cases = _parse_test_cases_from_markdown(all_text)
+    review_text = _stringify_content(state.get("messages", [])[-1].content) if state.get("messages") else ""
+
+    if parsed_cases:
+        save_result = save_test_cases_to_excel(
+            parsed_cases, file_path=file_path, sheet_name="测试用例", mode=mode
+        )
+        save_test_cases_to_excel(
+            [
+                {
+                    "PRD_HASH": current_prd_hash,
+                    "评审轮次": state.get("review_count", 0),
+                    "写入模式": mode_instruction,
+                    "评审内容": review_text,
+                    "生成时间": datetime.now().isoformat(timespec="seconds"),
+                }
+            ],
+            file_path=file_path,
+            sheet_name="评审记录",
+            mode="append",
+        )
+        return {
+            "messages": [AIMessage(content=save_result)],
+            "prd_hash": current_prd_hash,
+        }
 
     agent = create_agent(
         model=model,

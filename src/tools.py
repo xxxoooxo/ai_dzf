@@ -1,7 +1,7 @@
 import asyncio
 import os
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.agents import create_agent
@@ -81,7 +81,8 @@ def get_mcp_server_chart_tools():
 def save_test_cases_to_excel(
     test_cases: List[Dict],
     file_path: str = "test_cases.xlsx",
-    sheet_name: str = "测试用例"
+    sheet_name: str = "测试用例",
+    mode: Literal["overwrite", "append"] = "overwrite",
 ) -> str:
     """
     将测试用例保存到 Excel 文件中
@@ -114,13 +115,42 @@ def save_test_cases_to_excel(
         return "错误: 测试用例列表为空"
 
     try:
-        # 创建新的工作簿
-        workbook = openpyxl.Workbook()
-        sheet = workbook.active
-        sheet.title = sheet_name
+        file_exists = os.path.exists(file_path)
+        if file_exists:
+            workbook = openpyxl.load_workbook(file_path)
+        else:
+            workbook = openpyxl.Workbook()
 
-        # 定义表头（根据测试用例字典的键自动生成）
-        headers = list(test_cases[0].keys())
+        # 获取/创建工作表
+        if mode == "overwrite" and sheet_name in workbook.sheetnames:
+            old_sheet = workbook[sheet_name]
+            workbook.remove(old_sheet)
+
+        if sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+        else:
+            sheet = workbook.create_sheet(title=sheet_name)
+
+        # openpyxl 默认新建会带一个 Sheet，这里尽量保持整洁
+        if "Sheet" in workbook.sheetnames and len(workbook.sheetnames) > 1:
+            default_sheet = workbook["Sheet"]
+            if default_sheet.max_row == 1 and default_sheet.max_column == 1 and default_sheet["A1"].value is None:
+                workbook.remove(default_sheet)
+
+        # mode=append 时，尽量复用已有表头；否则从 test_cases 生成表头
+        existing_headers: list[str] = []
+        if mode == "append" and sheet.max_row >= 1:
+            first_row = [c.value for c in sheet[1]]
+            if any(v is not None for v in first_row):
+                existing_headers = [str(v) for v in first_row if v is not None]
+
+        headers = existing_headers or list(test_cases[0].keys())
+
+        # 补齐新增列（append 且 test_cases 出现新字段）
+        if existing_headers:
+            extra = [k for k in test_cases[0].keys() if k not in existing_headers]
+            if extra:
+                headers = existing_headers + extra
 
         # 设置表头样式
         header_font = Font(bold=True, color="FFFFFF", size=12)
@@ -133,16 +163,32 @@ def save_test_cases_to_excel(
             bottom=Side(style='thin')
         )
 
-        # 写入表头
-        for col_idx, header in enumerate(headers, start=1):
-            cell = sheet.cell(row=1, column=col_idx, value=header)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_alignment
-            cell.border = border
+        def write_header_row() -> None:
+            for col_idx, header in enumerate(headers, start=1):
+                cell = sheet.cell(row=1, column=col_idx, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+                cell.border = border
+
+        def header_is_empty() -> bool:
+            if sheet.max_row < 1:
+                return True
+            row = [c.value for c in sheet[1]]
+            return not any(v is not None and str(v).strip() for v in row)
+
+        if mode == "overwrite" or header_is_empty():
+            sheet.delete_rows(1, sheet.max_row)
+            write_header_row()
+        else:
+            # 若 append 且出现新列，更新表头行
+            if existing_headers and headers != existing_headers:
+                write_header_row()
+
+        start_row = sheet.max_row + 1 if (mode == "append" and sheet.max_row >= 2) else 2
 
         # 写入测试用例数据
-        for row_idx, test_case in enumerate(test_cases, start=2):
+        for row_idx, test_case in enumerate(test_cases, start=start_row):
             for col_idx, header in enumerate(headers, start=1):
                 # 获取对应字段的值
                 value = test_case.get(header, "")
@@ -161,17 +207,16 @@ def save_test_cases_to_excel(
                     elif value in ["阻塞", "Blocked", "BLOCKED"]:
                         cell.fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
 
-        # 自动调整列宽
+        # 自动调整列宽（避免 append 时全表扫描，按本次写入的行段扫描）
+        scan_start = 1 if mode == "overwrite" else max(1, start_row - 1)
+        scan_end = sheet.max_row
         for col_idx, header in enumerate(headers, start=1):
-            # 计算该列的最大内容长度
             max_length = len(str(header))
-            for row_idx in range(2, len(test_cases) + 2):
-                cell_value = str(sheet.cell(row=row_idx, column=col_idx).value)
-                # 考虑换行符，取最长的一行
-                max_line_length = max(len(line) for line in cell_value.split('\n')) if cell_value else 0
+            for row_idx in range(scan_start, scan_end + 1):
+                cell_value = str(sheet.cell(row=row_idx, column=col_idx).value or "")
+                max_line_length = max((len(line) for line in cell_value.split("\n")), default=0)
                 max_length = max(max_length, max_line_length)
 
-            # 设置列宽（限制最大宽度为50）
             adjusted_width = min(max_length + 2, 50)
             sheet.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = adjusted_width
 
@@ -408,8 +453,8 @@ _PDF_TEXT_MAX_CHARS: int = _env_int("PDF_TEXT_MAX_CHARS", 30000)
 _PDF_TEXT_MAX_PAGES: int = _env_int("PDF_TEXT_MAX_PAGES", 20)
 
 # 图片解析模式：
-# - always：总是尝试解析图片（仍受 PDF_IMAGE_MAX_* 预算限制）
-# - auto：根据用户问题是否提到“图片/图表/流程图”等再决定
+# - always：只要检测到 PDF 含图片/流程图等视觉内容，就尝试解析（仍受 PDF_IMAGE_MAX_* 预算限制）
+# - auto：用户问题提到“图片/图表/流程图”等或检测到 PDF 含视觉内容时才解析
 # - never：从不解析图片
 _PDF_IMAGES_MODE: str = (os.getenv("PDF_IMAGES_MODE", "always") or "always").strip().lower()
 
@@ -468,18 +513,8 @@ _PDF_EXTRACT_MAX_CHARS: int = _env_int("PDF_EXTRACT_MAX_CHARS", 0)
 _PDF_CHUNK_MAX_CHARS: int = _env_int("PDF_CHUNK_MAX_CHARS", 4000)
 
 
-def _should_extract_images(user_text: str) -> bool:
-    """根据配置决定是否解析图片（多模态）。"""
-    mode = (_PDF_IMAGES_MODE or "always").lower()
-    if mode == "never":
-        return False
-    if mode == "always":
-        return True
-    if mode != "auto":
-        # 配置写错时，保守起见按 always 处理（避免“用户以为能解析图片，实际没解析”）
-        return True
-
-    # auto：只有用户明确提到图片/图表等关键词才触发
+def _user_requested_images(user_text: str) -> bool:
+    """判断用户是否明确要求“解析图片/流程图/图表”等视觉内容。"""
     return any(
         kw in (user_text or "")
         for kw in (
@@ -669,10 +704,13 @@ def _truncate_text(text: str, max_chars: int) -> tuple[str, bool]:
 
 
 _IMAGE_TO_TEXT_PROMPT: str = (
-    "你是一个用于PDF内容解析的助手，任务是把图片内容转成可检索的文本。\n"
-    "1) 用尽可能精炼、信息密度高的方式描述图片（便于检索）。\n"
-    "2) 提取图片里的全部文字（不要遗漏任何内容）。\n"
-    "3) 以Markdown输出，不要包含解释性文字，也不要在开头输出```。\n"
+    "你是一个用于需求/PRD 多模态解析的助手，任务是把图片内容转成【可检索、可追溯、可用于生成测试用例】的文本。\n"
+    "\n"
+    "输出要求（只输出 Markdown，不要包含解释性文字，也不要在开头输出```）：\n"
+    "1) 先输出“关键信息摘要”（<= 12 条，信息密度高）：包含页面/模块、角色/权限、输入输出、关键字段、规则/阈值、异常分支。\n"
+    "2) 再输出“完整文字转录”：按从上到下、从左到右顺序尽量不漏。\n"
+    "3) 若图片是流程图/状态机/时序图/泳道图：必须输出“流程/分支清单”，用 `A -> B（条件/事件：...）` 形式列出所有可见分支/回路/终止条件。\n"
+    "4) 若图片是界面原型/截图：必须输出“交互要点”，列出按钮/入口、校验提示、错误码/异常提示文案、可选项/默认值。\n"
 )
 
 
@@ -920,15 +958,100 @@ def _safe_pdf_filename(filename: str | None) -> str:
     return name if name.lower().endswith(".pdf") else f"{name}.pdf"
 
 
+def _scan_pdf_visual_content(
+    pdf_path: Path,
+    *,
+    max_pages: int,
+    max_seconds: float,
+) -> tuple[bool | None, list[int], int | None, bool]:
+    """扫描 PDF 的视觉内容，用于决定是否启用豆包多模态解析。
+
+    返回：
+    - has_images：是否检测到嵌入位图（None 表示扫描失败/不可用）
+    - render_pages：需要“页面渲染”解析的页号列表（0-based）
+    - total_pages：总页数（可能为 None）
+    - timed_out：是否因 max_seconds 提前停止扫描
+    """
+    try:
+        import fitz  # type: ignore
+    except Exception:
+        return None, [], None, False
+
+    start = time.monotonic()
+    try:
+        doc = fitz.open(pdf_path.as_posix())
+    except Exception:
+        return None, [], None, False
+
+    try:
+        total_pages = getattr(doc, "page_count", None)
+        if not isinstance(total_pages, int) or total_pages <= 0:
+            total_pages = None
+
+        # 扫描范围：最多前 N 页（<=0 表示全量）
+        page_limit = total_pages or 0
+        if max_pages > 0 and page_limit > 0:
+            page_limit = min(page_limit, max_pages)
+
+        has_images_any = False
+        render_pages: list[int] = []
+        timed_out = False
+
+        for page_index in range(page_limit):
+            if max_seconds > 0 and (time.monotonic() - start) >= max_seconds:
+                timed_out = True
+                break
+
+            page = doc.load_page(page_index)
+
+            # 1) 嵌入位图：扫描/截图/插图等（通常流程图也属于此类）
+            try:
+                if page.get_images(full=True):
+                    has_images_any = True
+                    continue
+            except Exception:
+                # 失败时保守处理：不影响后续其它页扫描
+                pass
+
+            # 2) 流程图/矢量图：没有嵌入图片，但存在大量绘制指令（矩形/线条/箭头等）
+            try:
+                drawings = page.get_drawings() or []
+            except Exception:
+                drawings = []
+            if not drawings:
+                continue
+
+            drawings_count = len(drawings)
+            if drawings_count >= 20:
+                render_pages.append(page_index)
+                continue
+
+            # 轻量兜底：绘制不多但文本也很少，仍可能是图示页
+            try:
+                text = page.get_text("text") or ""
+            except Exception:
+                text = ""
+            if drawings_count >= 5 and len(text.strip()) < 200:
+                render_pages.append(page_index)
+
+        return has_images_any, render_pages, total_pages, timed_out
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+
 def _extract_pdf_markdown(
     pdf_bytes: bytes,
     filename: str,
     *,
-    enable_images: bool,
+    user_requested_images: bool,
+    force_extract_images: bool = False,
     doc_id: str | None = None,
     persisted_pdf_path: Path | None = None,
 ) -> str:
-    """PDF bytes -> Markdown（必要时包含图片多模态文本）。"""
+    """PDF bytes -> Markdown（必要时包含图片/流程图多模态文本）。"""
     images_parser = _get_pdf_images_parser()
 
     # 说明：
@@ -974,12 +1097,29 @@ def _extract_pdf_markdown(
             if total_text_pages is None and isinstance(doc.metadata, dict):
                 total_text_pages = doc.metadata.get("total_pages")
 
+            # ==========================
+            # chunks.jsonl 是什么？（小白版）
+            # ==========================
+            # - 我们会把从 PDF 抽取出来的内容写到 storage/pdf_extracted/<DOC_ID>/chunks.jsonl
+            # - 文件是 JSON Lines 格式：每一行是一个 JSON（称为一个 chunk）
+            # - 每个 chunk 都有一个 kind 字段，用于标记“这段内容从哪里来”：
+            #   - kind="text"：PDF 文字层抽取的文本
+            #   - kind="images"：PDF 嵌入图片（用豆包多模态识别后得到的文本）
+            #   - kind="page_render"：流程图/矢量页（把页面渲染成 PNG，再用豆包识别得到的文本）
+            #
+            # 后续 pdf_analyze_doc 会逐行读取 chunks.jsonl：
+            # - 遇到 images/page_render：直接写入 notes.md（因为豆包已把图变成文本，不再重复调用 deepseek）
+            # - 遇到 text：批量喂给 deepseek 生成“增量笔记”（可通过 PDF_ANALYZE_BATCH_SIZE 调整批量大小）
+            #
+            # 你可以把 chunks.jsonl 理解为：把一份大 PDF 拆成很多“小块内容”，便于断点续跑与按需分析。
+            #
             # 按页分片写入（用于后续检索/RAG）
             if chunks_fp is not None:
                 parts = _split_text(doc.page_content, _PDF_CHUNK_MAX_CHARS)
                 for part_index, part_text in enumerate(parts):
                     chunk = {
                         "doc_id": doc_id,
+                        # text：来自 PDF 文本层抽取（不是图片识别）
                         "kind": "text",
                         "page": doc.metadata.get("page")
                         if isinstance(doc.metadata, dict)
@@ -1018,11 +1158,34 @@ def _extract_pdf_markdown(
                 f"（PDF_CONTEXT_MAX_PAGES={_PDF_CONTEXT_MAX_PAGES}，PDF_CONTEXT_MAX_CHARS={_PDF_CONTEXT_MAX_CHARS}）]"
             )
 
-        if not enable_images and not _PDF_FORCE_EXTRACT_IMAGES:
+        mode = (_PDF_IMAGES_MODE or "always").strip().lower()
+        # force_extract_images：用于“测试用例工作流”等必须尽量不漏的场景，允许绕过 PDF_IMAGES_MODE=never。
+        if mode == "never" and not (_PDF_FORCE_EXTRACT_IMAGES or force_extract_images):
+            final_text, _ = _truncate_text(text_md, _PDF_CONTEXT_MAX_CHARS)
+            return f"{final_text}\n\n[提示：已关闭PDF图片/流程图解析（PDF_IMAGES_MODE=never）]"
+
+        has_images, render_pages, _total_pages, scan_timed_out = _scan_pdf_visual_content(
+            pdf_path,
+            max_pages=_PDF_IMAGE_MAX_PAGES,
+            max_seconds=_PDF_IMAGE_MAX_SECONDS,
+        )
+        detected_visuals = (has_images is True) or bool(render_pages)
+        scan_failed = has_images is None
+
+        if _PDF_FORCE_EXTRACT_IMAGES:
+            enable_images = True
+        elif mode == "auto":
+            enable_images = user_requested_images or detected_visuals
+        else:
+            # always / 配置写错：尽量解析（扫描失败时也尝试一次，避免“用户以为能解析，实际没解析”）
+            enable_images = user_requested_images or detected_visuals or scan_failed
+
+        if not enable_images:
             final_text, _ = _truncate_text(text_md, _PDF_CONTEXT_MAX_CHARS)
             return (
-                final_text
-                + "\n\n[提示：如需解析PDF中的图片/流程图/图表，请在问题中说明“解析图片”，或设置环境变量 PDF_FORCE_EXTRACT_IMAGES=1]"
+                f"{final_text}\n\n"
+                "[提示：未检测到PDF中的图片/流程图/图表；已仅提取文本。"
+                "如需强制尝试解析，请在问题中说明“解析图片”，或设置环境变量 PDF_FORCE_EXTRACT_IMAGES=1]"
             )
 
         if images_parser is not None:
@@ -1031,69 +1194,168 @@ def _extract_pdf_markdown(
                     images_parser,
                     max_images=_PDF_IMAGE_MAX_IMAGES,
                 )
-                loader = PyMuPDF4LLMLoader(
-                    str(pdf_path),
-                    mode="page",
-                    extract_images=True,
-                    images_parser=budgeted_parser,
-                )
-
                 start = time.monotonic()
-                page_contents: list[str] = []
-                processed_pages = 0
-                total_pages: int | None = None
+
+                visual_sections: list[str] = []
+                notes: list[str] = []
                 timed_out = False
 
-                for doc in loader.lazy_load():
-                    if total_pages is None and isinstance(doc.metadata, dict):
-                        total_pages = doc.metadata.get("total_pages")
-                    page_contents.append(doc.page_content)
-                    processed_pages += 1
+                # 1) 嵌入图片：用 PyMuPDF4LLMLoader 抽取图片，并由 budgeted_parser（豆包）转为文本
+                if has_images is not False:
+                    loader = PyMuPDF4LLMLoader(
+                        str(pdf_path),
+                        mode="page",
+                        extract_images=True,
+                        images_parser=budgeted_parser,
+                    )
 
-                    if chunks_fp is not None:
-                        parts = _split_text(doc.page_content, _PDF_CHUNK_MAX_CHARS)
-                        for part_index, part_text in enumerate(parts):
-                            chunk = {
-                                "doc_id": doc_id,
-                                "kind": "images",
-                                "page": doc.metadata.get("page")
-                                if isinstance(doc.metadata, dict)
-                                else None,
-                                "part_index": part_index,
-                                "part_total": len(parts),
-                                "content": part_text,
-                                "metadata": doc.metadata,
-                            }
-                            chunks_fp.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+                    page_contents: list[str] = []
+                    processed_pages = 0
+                    total_pages: int | None = None
 
-                    # 约定：<= 0 表示“不限制”
-                    if _PDF_IMAGE_MAX_PAGES > 0 and processed_pages >= _PDF_IMAGE_MAX_PAGES:
-                        break
-                    if _PDF_IMAGE_MAX_SECONDS > 0 and time.monotonic() - start >= _PDF_IMAGE_MAX_SECONDS:
-                        timed_out = True
-                        break
+                    for doc in loader.lazy_load():
+                        if total_pages is None and isinstance(doc.metadata, dict):
+                            total_pages = doc.metadata.get("total_pages")
+                        page_contents.append(doc.page_content)
+                        processed_pages += 1
 
-                images_md = "\n\n".join(page_contents).strip()
-                combined = text_md
+                        if chunks_fp is not None:
+                            parts = _split_text(doc.page_content, _PDF_CHUNK_MAX_CHARS)
+                            for part_index, part_text in enumerate(parts):
+                                chunk = {
+                                    "doc_id": doc_id,
+                                    # images：来自 PDF 嵌入图片（豆包多模态识别后的文本）
+                                    "kind": "images",
+                                    "page": doc.metadata.get("page")
+                                    if isinstance(doc.metadata, dict)
+                                    else None,
+                                    "part_index": part_index,
+                                    "part_total": len(parts),
+                                    "content": part_text,
+                                    "metadata": doc.metadata,
+                                }
+                                chunks_fp.write(json.dumps(chunk, ensure_ascii=False) + "\n")
 
-                has_images = "![" in images_md
-                if has_images:
-                    notes: list[str] = []
+                        # 约定：<= 0 表示“不限制”
+                        if _PDF_IMAGE_MAX_PAGES > 0 and processed_pages >= _PDF_IMAGE_MAX_PAGES:
+                            break
+                        if _PDF_IMAGE_MAX_SECONDS > 0 and time.monotonic() - start >= _PDF_IMAGE_MAX_SECONDS:
+                            timed_out = True
+                            break
+
+                    images_md = "\n\n".join(page_contents).strip()
+                    if "![" in images_md:
+                        visual_sections.append(f"[嵌入图片解析（节选）]\n{images_md}")
+
                     if total_pages and processed_pages < total_pages:
                         notes.append(
-                            f"仅处理前 {processed_pages}/{total_pages} 页图片（PDF_IMAGE_MAX_PAGES={_PDF_IMAGE_MAX_PAGES}）"
-                        )
-                    if budgeted_parser.skipped_images:
-                        notes.append(
-                            f"图片超过上限，已跳过 {budgeted_parser.skipped_images} 张（PDF_IMAGE_MAX_IMAGES={_PDF_IMAGE_MAX_IMAGES}）"
-                        )
-                    if timed_out:
-                        notes.append(
-                            f"达到耗时上限 {int(_PDF_IMAGE_MAX_SECONDS)}s（PDF_IMAGE_MAX_SECONDS={_PDF_IMAGE_MAX_SECONDS}）"
+                            f"仅处理前 {processed_pages}/{total_pages} 页（PDF_IMAGE_MAX_PAGES={_PDF_IMAGE_MAX_PAGES}）"
                         )
 
+                # 2) 流程图/矢量图：对特定页做“页面渲染”，再交给 budgeted_parser（豆包）识别
+                if render_pages and not timed_out:
+                    try:
+                        import fitz  # type: ignore
+                    except Exception:
+                        fitz = None
+
+                    if fitz is not None:
+                        rendered_blocks: list[str] = []
+                        rendered_pages_count = 0
+                        try:
+                            doc = fitz.open(pdf_path.as_posix())
+                        except Exception:
+                            doc = None
+
+                        try:
+                            if doc is not None:
+                                for page_index in render_pages:
+                                    if _PDF_IMAGE_MAX_SECONDS > 0 and time.monotonic() - start >= _PDF_IMAGE_MAX_SECONDS:
+                                        timed_out = True
+                                        break
+
+                                    page = doc.load_page(page_index)
+                                    png_bytes: bytes | None = None
+                                    for zoom in (2.0, 1.5, 1.0):
+                                        pix = page.get_pixmap(
+                                            matrix=fitz.Matrix(zoom, zoom),
+                                            alpha=False,
+                                        )
+                                        candidate = pix.tobytes("png")
+                                        if _PDF_IMAGE_MAX_BYTES <= 0 or len(candidate) <= _PDF_IMAGE_MAX_BYTES:
+                                            png_bytes = candidate
+                                            break
+
+                                    if png_bytes is None:
+                                        rendered_blocks.append(
+                                            f"[第 {page_index + 1} 页：页面渲染失败/过大，已跳过]"
+                                        )
+                                        continue
+
+                                    blob = Blob.from_data(
+                                        png_bytes,
+                                        mime_type="image/png",
+                                        path=f"{pdf_path.as_posix()}#page={page_index + 1}",
+                                        metadata={
+                                            "filename": _safe_pdf_filename(filename),
+                                            "page": page_index,
+                                        },
+                                    )
+                                    for img_doc in budgeted_parser.lazy_parse(blob):
+                                        text = (img_doc.page_content or "").strip()
+                                        if text:
+                                            rendered_blocks.append(
+                                                f"[第 {page_index + 1} 页：页面渲染解析]\n{text}"
+                                            )
+
+                                        if text and chunks_fp is not None and doc_id is not None:
+                                            parts = _split_text(text, _PDF_CHUNK_MAX_CHARS)
+                                            for part_index, part_text in enumerate(parts):
+                                                if not part_text.strip():
+                                                    continue
+                                                chunk = {
+                                                    "doc_id": doc_id,
+                                                    # page_render：来自“页面渲染 -> 豆包识别”（用于流程图/矢量图页）
+                                                    "kind": "page_render",
+                                                    "page": page_index,
+                                                    "part_index": part_index,
+                                                    "part_total": len(parts),
+                                                    "content": part_text,
+                                                    "metadata": {"source": pdf_path.as_posix()},
+                                                }
+                                                chunks_fp.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+
+                                    rendered_pages_count += 1
+                                    if budgeted_parser.skipped_images:
+                                        break
+
+                        finally:
+                            if doc is not None:
+                                try:
+                                    doc.close()
+                                except Exception:
+                                    pass
+
+                        rendered_md = "\n\n".join(rendered_blocks).strip()
+                        if rendered_md:
+                            visual_sections.append(f"[流程图/页面渲染解析（节选）]\n{rendered_md}")
+                        if rendered_pages_count:
+                            notes.append(f"页面渲染解析 {rendered_pages_count} 页")
+
+                if budgeted_parser.skipped_images:
+                    notes.append(
+                        f"图片超过上限，已跳过 {budgeted_parser.skipped_images} 张（PDF_IMAGE_MAX_IMAGES={_PDF_IMAGE_MAX_IMAGES}）"
+                    )
+                if scan_timed_out or timed_out:
+                    notes.append(
+                        f"达到耗时上限 {int(_PDF_IMAGE_MAX_SECONDS)}s（PDF_IMAGE_MAX_SECONDS={_PDF_IMAGE_MAX_SECONDS}）"
+                    )
+
+                combined = text_md
+                if visual_sections:
                     combined = (
-                        f"{text_md}\n\n---\n\n[图片多模态解析（节选）]\n{images_md}"
+                        f"{text_md}\n\n---\n\n[图片/流程图多模态解析（节选）]\n"
+                        + "\n\n".join(visual_sections)
                     )
                     if notes:
                         combined += "\n\n[" + "；".join(notes) + "]"
@@ -1115,8 +1377,80 @@ def _extract_pdf_markdown(
             temp_dir_ctx.__exit__(None, None, None)
 
 
-def _replace_pdf_file_blocks_with_text(content: Any) -> tuple[str | None, bool]:
-    """把 HumanMessage.content 中的 PDF file 块替换成可读文本。"""
+def _safe_meta_name(meta: Any) -> str | None:
+    if not isinstance(meta, dict):
+        return None
+    for k in ("filename", "name"):
+        v = meta.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _describe_image_block(block: dict[str, Any]) -> str:
+    block_type = str(block.get("type") or "").lower()
+    if block_type == "image_url":
+        image_url = block.get("image_url")
+        if isinstance(image_url, dict):
+            name = _safe_meta_name(image_url.get("metadata"))
+            if name:
+                return name
+    name = _safe_meta_name(block.get("metadata"))
+    return name or "uploaded image"
+
+
+def _data_url_mime_type(url: str) -> str | None:
+    if not isinstance(url, str):
+        return None
+    raw = url.strip()
+    if not raw.startswith("data:"):
+        return None
+    head = raw.split(",", 1)[0]
+    # data:<mime_type>;base64
+    if not head.startswith("data:"):
+        return None
+    mt = head[5:].split(";", 1)[0].strip().lower()
+    return mt or None
+
+
+def _try_decode_image_block(block: dict[str, Any]) -> tuple[bytes | None, str, str]:
+    """从多模态 block 中提取 (bytes, mime_type, display_name)。失败时 bytes=None。"""
+    name = _describe_image_block(block)
+    block_type = str(block.get("type") or "").lower().strip()
+    mime_type = str(block.get("mime_type") or "").lower().strip() or "image/png"
+
+    raw_b64: str | None = None
+    if block_type == "image_url":
+        image_url = block.get("image_url")
+        if isinstance(image_url, dict):
+            url = image_url.get("url")
+            if isinstance(url, str) and url.strip():
+                url_mt = _data_url_mime_type(url)
+                if url_mt:
+                    mime_type = url_mt
+                # 仅支持 data URL（避免隐式网络请求）
+                if url.strip().startswith("data:"):
+                    raw_b64 = url
+    elif block_type in {"image", "file"}:
+        data = block.get("data")
+        if isinstance(data, str) and data.strip():
+            raw_b64 = data
+
+    if not raw_b64:
+        return None, mime_type or "image/png", name
+
+    try:
+        return _decode_base64(raw_b64), mime_type or "image/png", name
+    except Exception:
+        return None, mime_type or "image/png", name
+
+
+def _replace_pdf_file_blocks_with_text(
+    content: Any,
+    *,
+    force_image_vision: bool = False,
+) -> tuple[str | None, bool]:
+    """把 HumanMessage.content 中的多模态块替换成可读文本（PDF 抽取 + 图片/附件占位）。"""
     if not isinstance(content, list):
         return None, False
 
@@ -1128,10 +1462,17 @@ def _replace_pdf_file_blocks_with_text(content: Any) -> tuple[str | None, bool]:
                 user_text_parts.append(text.strip())
     user_text = "\n".join(user_text_parts)
 
-    enable_images = _should_extract_images(user_text)
+    user_requested_images = _user_requested_images(user_text) or force_image_vision
 
     text_chunks: list[str] = []
     replaced_any = False
+
+    # 仅在“用户明确要求解析图片”或“强制开启”时才做图片多模态解析，避免普通对话额外开销。
+    image_parser: BaseBlobParser | None = None
+    if user_requested_images:
+        base_parser = _get_pdf_images_parser()
+        if base_parser is not None:
+            image_parser = _BudgetedImageBlobParser(base_parser, max_images=_PDF_IMAGE_MAX_IMAGES)
 
     for block in content:
         if isinstance(block, str):
@@ -1149,15 +1490,73 @@ def _replace_pdf_file_blocks_with_text(content: Any) -> tuple[str | None, bool]:
                 text_chunks.append(text)
             continue
 
+        if block_type in {"image_url", "image"}:
+            replaced_any = True
+            raw, mime_type, name = _try_decode_image_block(block)
+            if image_parser is not None and raw is not None:
+                blob = Blob.from_data(
+                    raw,
+                    mime_type=mime_type,
+                    path=f"chat://image/{name}",
+                    metadata={"filename": name},
+                )
+                parsed_blocks: list[str] = []
+                for img_doc in image_parser.lazy_parse(blob):
+                    txt = (img_doc.page_content or "").strip()
+                    if txt:
+                        parsed_blocks.append(txt)
+                parsed = "\n\n".join(parsed_blocks).strip()
+                text_chunks.append(f"[图片 {name} 解析结果]\n{parsed}" if parsed else f"[图片已上传：{name}]")
+            else:
+                text_chunks.append(f"[图片已上传：{name}]")
+            continue
+
         if block_type != "file":
             continue
 
-        if (block.get("source_type") or "").lower() != "base64":
-            continue
-        if (block.get("mime_type") or "").lower() != "application/pdf":
+        mime_type = str(block.get("mime_type") or "").strip().lower()
+        filename = _safe_meta_name(block.get("metadata")) or "upload.bin"
+
+        # 兼容 legacy：file + image/*
+        if mime_type.startswith("image/"):
+            replaced_any = True
+            raw, decoded_mime, _name = _try_decode_image_block(
+                {
+                    "type": "file",
+                    "mime_type": mime_type,
+                    "data": block.get("data"),
+                    "metadata": block.get("metadata"),
+                }
+            )
+            name = filename or _name
+            if image_parser is not None and raw is not None:
+                blob = Blob.from_data(
+                    raw,
+                    mime_type=decoded_mime or mime_type,
+                    path=f"chat://image/{name}",
+                    metadata={"filename": name},
+                )
+                parsed_blocks: list[str] = []
+                for img_doc in image_parser.lazy_parse(blob):
+                    txt = (img_doc.page_content or "").strip()
+                    if txt:
+                        parsed_blocks.append(txt)
+                parsed = "\n\n".join(parsed_blocks).strip()
+                text_chunks.append(f"[图片 {name} 解析结果]\n{parsed}" if parsed else f"[图片已上传：{name}]")
+            else:
+                text_chunks.append(f"[图片已上传：{name}]")
             continue
 
-        filename = (block.get("metadata") or {}).get("filename") or "upload.pdf"
+        if (block.get("source_type") or "").lower() != "base64":
+            replaced_any = True
+            text_chunks.append(f"[附件 {filename}（{mime_type or 'unknown'}）：未提供base64内容，已忽略]")
+            continue
+
+        if mime_type != "application/pdf":
+            replaced_any = True
+            text_chunks.append(f"[附件 {filename}（{mime_type or 'unknown'}）：暂不支持解析，已忽略]")
+            continue
+
         data = block.get("data") or ""
         if not isinstance(data, str) or not data.strip():
             replaced_any = True
@@ -1178,7 +1577,8 @@ def _replace_pdf_file_blocks_with_text(content: Any) -> tuple[str | None, bool]:
                 md = _extract_pdf_markdown(
                     pdf_bytes,
                     filename,
-                    enable_images=enable_images,
+                    user_requested_images=user_requested_images,
+                    force_extract_images=force_image_vision,
                     doc_id=doc_id,
                     persisted_pdf_path=persisted_pdf_path,
                 )
@@ -1205,13 +1605,24 @@ def _replace_pdf_file_blocks_with_text(content: Any) -> tuple[str | None, bool]:
     return "\n\n".join(text_chunks).strip(), True
 
 
-def build_pdf_message_updates(messages: list[Any]) -> list[Any]:
-    """扫描 messages，把含 PDF 附件的 HumanMessage 更新为“文本版”。"""
+def build_pdf_message_updates(
+    messages: list[Any],
+    *,
+    force_image_vision: bool = False,
+) -> list[Any]:
+    """扫描 messages，把含 PDF/图片等多模态内容的 HumanMessage 更新为“纯文本版”。
+
+    默认行为：仅把图片作为占位符文本（避免普通对话额外开销）。
+    当 force_image_vision=True：会尝试把图片内容解析为文本（并且强制开启 PDF 的图片/流程图解析）。
+    """
     updated_messages: list[Any] = []
 
     for msg in messages:
         content = getattr(msg, "content", None)
-        new_content, replaced = _replace_pdf_file_blocks_with_text(content)
+        new_content, replaced = _replace_pdf_file_blocks_with_text(
+            content,
+            force_image_vision=force_image_vision,
+        )
         if replaced and new_content is not None:
             if getattr(msg, "id", None) is None:
                 msg.id = str(uuid4())
@@ -1298,6 +1709,25 @@ def pdf_analyze_doc(doc_id: str, question: str) -> str:
     notes_tail_chars = _env_int("PDF_ANALYZE_NOTES_TAIL_CHARS", 2000)
     # 防御性上限：避免极端情况下写爆磁盘；需要“尽量不漏”可以调大，或设为 0 代表不限。
     notes_max_chars = _env_int("PDF_ANALYZE_NOTES_MAX_CHARS", 300000)
+
+    # ==========================
+    # 纯文本分片批处理（减少 deepseek 调用次数）
+    # ==========================
+    #
+    # 小白版解释：
+    # - chunks.jsonl 里“纯文本”分片（kind="text"）可能很多。
+    # - 原逻辑是“每个分片都调用一次 deepseek 生成增量笔记”，分片多就会调用非常频繁。
+    # - 这里做一个“批量合并”：一次把 N 个纯文本分片打包给 deepseek，
+    #   让它按分片顺序分别输出增量笔记，从而把调用次数约缩减为 1/N。
+    #
+    # 如何回退到旧行为？
+    # - 设置环境变量：PDF_ANALYZE_BATCH_SIZE=1  （每片一调）
+    #
+    # 调参建议：
+    # - PDF_ANALYZE_BATCH_SIZE：每批多少个分片（默认 4，越大调用越少，但单次提示更长）
+    # - PDF_ANALYZE_BATCH_MAX_CHARS：每批“输入正文”最大字符数（默认 16000；<=0 表示不限制）
+    batch_size = max(1, _env_int("PDF_ANALYZE_BATCH_SIZE", 4))
+    batch_max_chars = _env_int("PDF_ANALYZE_BATCH_MAX_CHARS", 16000)
 
     final_sections_max_chars = _env_int("PDF_ANALYZE_FINAL_MAX_CHARS", 20000)
     final_input_max_chars = _env_int("PDF_ANALYZE_FINAL_INPUT_MAX_CHARS", 90000)
@@ -1393,6 +1823,77 @@ def pdf_analyze_doc(doc_id: str, question: str) -> str:
         )
     )
 
+    # ==========================
+    # 优化点：减少 deepseek 调用次数
+    # ==========================
+    #
+    # 背景（小白版）：
+    # - 我们在“PDF 抽取阶段”（见 _extract_pdf_markdown）会把两类视觉信息转成文字：
+    #   1) 嵌入图片（kind="images"）：用豆包多模态把图片内容识别为文字
+    #   2) 流程图/矢量图（kind="page_render"）：把页面渲染为 PNG，再用豆包多模态识别为文字
+    # - 抽取出的文字会被写入 chunks.jsonl（每行一个 chunk），供 pdf_analyze_doc 逐片阅读。
+    #
+    # 为什么能跳过 deepseek？
+    # - 对这些视觉 chunk 来说，“豆包已经把图变成了可检索的文本”，再让 deepseek 逐片做一次“增量总结”
+    #   性价比很低：它并不会显著提高最终答案质量，但会增加大量模型调用。
+    # - 因此我们做一个条件分支：遇到视觉 chunk 时，直接把它作为“笔记内容”落盘到 notes.md；
+    #   deepseek 只在最后“基于累计笔记”生成结构化报告（仍然保证效果一致）。
+    #
+    # 注意：
+    # - 这里不改变“最终汇总/回答”的逻辑，只是避免对同一份视觉内容重复调用 deepseek。
+    # - 如果你想恢复原行为，可以把下面 _visual_kinds 设为空集合即可（但不推荐）。
+    _visual_kinds = {"images", "page_render"}
+
+    # 防御：notes.md 太大时就停止写入（避免把磁盘写爆/后续读取变慢）。
+    # 这个开关只影响“追加笔记”，不影响断点状态（analysis_state.json）的保存。
+    notes_write_disabled = False
+
+    def append_notes(
+        *,
+        chunk_index: Any,
+        kind: str,
+        page: Any,
+        part_index: Any,
+        part_total: Any,
+        body: str,
+    ) -> None:
+        nonlocal notes_write_disabled
+
+        # 如果已经触发“停止写入”，后续直接返回（避免重复 I/O）
+        if notes_write_disabled:
+            return
+
+        body = (body or "").strip()
+        if not body:
+            return
+
+        # 统一 notes.md 的写入格式：每个 chunk/批次 都带一个小标题 + 元信息（便于人读、也便于后续模型汇总）。
+        header = (
+            f"\n\n## 分片 {chunk_index}\n"
+            f"- kind: {kind}\n"
+            f"- page: {page}\n"
+            f"- part: {part_index}/{part_total}\n\n"
+        )
+        to_write = header + body + "\n"
+
+        # 文件大小保护：超过上限就停止继续写入（并写一次提示）。
+        # notes_max_chars 是“字节/字符的近似阈值”（用文件大小 stat().st_size 做快速判断）。
+        if notes_max_chars > 0 and notes_path.exists():
+            try:
+                if notes_path.stat().st_size > notes_max_chars:
+                    notes_write_disabled = True
+                    with open(notes_path, "a", encoding="utf-8") as out_fp:
+                        out_fp.write(
+                            "\n\n[警告] notes.md 已超过上限，后续增量将不再写入。"
+                            "如需继续写入，请调大 PDF_ANALYZE_NOTES_MAX_CHARS 或设置为 0。\n"
+                        )
+                    return
+            except Exception:
+                pass
+
+        with open(notes_path, "a", encoding="utf-8") as out_fp:
+            out_fp.write(to_write)
+
     if not done:
         try:
             total_lines = sum(1 for _ in open(chunks_path, "r", encoding="utf-8"))
@@ -1400,11 +1901,132 @@ def pdf_analyze_doc(doc_id: str, question: str) -> str:
             total_lines = None
 
         seen: set[str] = set()
+
+        # --------------------------
+        # 纯文本分片的“批量缓冲区”
+        # --------------------------
+        # 我们把多个 kind="text" 的分片先放进这个缓冲区，
+        # 凑够 batch_size 或达到 batch_max_chars 后，再一次性调用 deepseek。
+        text_batch: list[dict[str, Any]] = []
+        text_batch_chars = 0
+
+        def flush_text_batch(*, reason: str) -> str | None:
+            """把缓冲区里的纯文本分片一次性喂给 deepseek，并把输出写入 notes.md。
+
+            返回：
+            - None：成功
+            - str：失败时的“已断点保存”提示文本（直接 return 给用户）
+            """
+            nonlocal text_batch, text_batch_chars, steps, line_offset
+
+            if not text_batch:
+                return None
+
+            # 1) 为了去重（避免模型重复输出已有笔记），只把 notes.md 尾部一小段塞进提示词
+            notes_tail = _read_tail(notes_path, notes_tail_chars)
+
+            # 2) 构造“多分片输入”，每个分片都带上元信息（page/part），便于模型按分片输出
+            batch_blocks: list[str] = []
+            for item in text_batch:
+                batch_blocks.append(
+                    (
+                        "----------\n"
+                        f"分片 {item.get('chunk_index')}（kind={item.get('kind')} "
+                        f"page={item.get('page')} part={item.get('part_index')}/{item.get('part_total')}）\n"
+                        f"{item.get('content')}"
+                    )
+                )
+            merged_chunks = "\n\n".join(batch_blocks).strip()
+
+            # 3) 批量提示词：要求模型“按分片顺序分别输出增量”，这样效果尽量接近旧版逐片调用
+            prompt = HumanMessage(
+                content=(
+                    f"分析目标：\n{analysis_goal}\n\n"
+                    "你将一次性阅读下面多个分片内容。请【严格按分片顺序】分别输出每个分片的【新增关键信息】（增量）。\n"
+                    "输出格式（必须遵守）：\n"
+                    "### 分片 <编号>\n"
+                    "- ...\n\n"
+                    "如果某分片没有新增信息，输出：\n"
+                    "### 分片 <编号>\n"
+                    "（无新增）\n\n"
+                    f"待分析分片（触发原因：{reason}；本批共 {len(text_batch)} 个）：\n"
+                    f"{merged_chunks}\n\n"
+                    "已记录的累计笔记（末尾节选，仅用于去重，不代表全部）：\n"
+                    f"{notes_tail}\n\n"
+                    "再次强调：\n"
+                    "1) 不要复述笔记节选；\n"
+                    "2) 不要跨分片合并输出；\n"
+                    "3) 信息密度要高，尽量不漏规则/字段/边界条件。\n"
+                )
+            )
+
+            try:
+                result = model.invoke([system, prompt])
+            except Exception as exc:
+                # deepseek 调用失败：保存断点并把“可继续指令”返回给用户
+                flush_state(done_flag=False)
+                preview = _read_tail(notes_path, preview_chars)
+                progress = str(line_offset)
+                if total_lines:
+                    pct = (line_offset / total_lines) * 100
+                    progress = f"{line_offset}/{total_lines}（{pct:.1f}%）"
+                return (
+                    f"[已断点保存] DOC_ID: {doc_id}\n"
+                    f"- 已处理到分片行号：{progress}\n"
+                    f"- 本轮累计 steps：{steps}\n"
+                    f"- 当前进度已落盘：{state_path.as_posix()}\n\n"
+                    f"[本次调用遇到错误]\n{exc}\n\n"
+                    f"[累计笔记预览]\n{preview}\n\n"
+                    f"如需继续，请发送：继续解析 DOC_ID: {doc_id}"
+                )
+
+            delta = result.content if isinstance(result.content, str) else str(result.content)
+
+            # 4) 写入 notes.md：用“分片范围”做标题，便于你回看定位
+            start_chunk = text_batch[0].get("chunk_index")
+            end_chunk = text_batch[-1].get("chunk_index")
+            pages = [
+                p
+                for p in (item.get("page") for item in text_batch)
+                if isinstance(p, int)
+            ]
+            page_hint = f"{min(pages)}..{max(pages)}" if pages else "unknown"
+
+            append_notes(
+                chunk_index=f"{start_chunk}-{end_chunk}（批量）",
+                kind="text_batch",
+                page=page_hint,
+                part_index="*",
+                part_total="*",
+                body=delta,
+            )
+
+            # 5) 更新断点状态：
+            # - steps：已成功处理的分片数（不是调用次数）
+            # - line_offset：已处理到 chunks.jsonl 的哪一行（下次从这里继续）
+            steps += len(text_batch)
+            last_line_idx = text_batch[-1].get("line_idx")
+            try:
+                line_offset = int(last_line_idx) + 1
+            except Exception:
+                # 极端兜底：如果 line_idx 缺失，就不推进（宁可重复，不要跳过）
+                pass
+
+            # 按旧逻辑定期落盘进度（可通过 PDF_ANALYZE_FLUSH_EVERY 调整）
+            if flush_every_steps > 0 and steps % flush_every_steps == 0:
+                flush_state(done_flag=False)
+
+            # 6) 清空缓冲区
+            text_batch = []
+            text_batch_chars = 0
+            return None
+
         with open(chunks_path, "r", encoding="utf-8") as fp:
             for idx, line in enumerate(fp):
                 if idx < line_offset:
                     continue
-                if max_steps > 0 and steps >= max_steps:
+                # steps 统计“已成功处理的分片数”；text_batch 里的是“已读入但还未处理”的分片
+                if max_steps > 0 and (steps + len(text_batch)) >= max_steps:
                     break
                 if max_seconds > 0 and (time.monotonic() - start_ts) >= max_seconds:
                     break
@@ -1440,69 +2062,80 @@ def pdf_analyze_doc(doc_id: str, question: str) -> str:
                 part_index = chunk.get("part_index")
                 part_total = chunk.get("part_total")
 
-                steps += 1
-                notes_tail = _read_tail(notes_path, notes_tail_chars)
+                # 统一 kind：避免大小写/空值导致分支判断不稳定
+                kind_key = str(kind or "text").strip().lower()
 
-                prompt = HumanMessage(
-                    content=(
-                        f"分析目标：\n{analysis_goal}\n\n"
-                        f"当前分片：kind={kind} page={page} part={part_index}/{part_total}\n"
-                        f"{content}\n\n"
-                        "已记录的累计笔记（末尾节选，仅用于去重，不代表全部）：\n"
-                        f"{notes_tail}\n\n"
-                        "请输出：只写【本分片新增的关键信息】（增量），不要复述上面的节选。"
+                # 条件边（核心优化）：
+                # - 如果是视觉分片（images/page_render），说明内容已经是“豆包识别后的文本”
+                # - 直接写入 notes.md 作为“事实笔记”，不要再调用 deepseek 做增量总结
+                # - 仍然会推进 line_offset（断点续跑）并按需 flush_state
+                if kind_key in _visual_kinds:
+                    # 为了保持 notes.md 顺序一致：遇到视觉分片前，先把前面的纯文本缓冲区 flush 掉
+                    err = flush_text_batch(reason="before_visual")
+                    if err:
+                        return err
+
+                    append_notes(
+                        chunk_index=idx + 1,
+                        kind=kind_key,
+                        page=page,
+                        part_index=part_index,
+                        part_total=part_total,
+                        body=content,
                     )
+                    steps += 1
+                    line_offset = idx + 1
+                    if flush_every_steps > 0 and steps % flush_every_steps == 0:
+                        flush_state(done_flag=False)
+                    continue
+
+                # --------------------------
+                # 纯文本分片：进入批量缓冲区
+                # --------------------------
+                # 说明：
+                # - 这里不立刻调用 deepseek，而是先缓存起来；
+                # - 缓冲区达到 batch_size 或 batch_max_chars 后，再统一调用一次 deepseek。
+                if kind_key != "text":
+                    # 兜底：未来如果出现新的 kind（但不属于 _visual_kinds），也按“文本”处理以尽量不漏信息
+                    kind_key = "text"
+
+                # 如果“再加一个分片”会超过字符上限，先把当前批次 flush（保持每批大小可控）
+                if (
+                    text_batch
+                    and batch_max_chars > 0
+                    and (text_batch_chars + len(content)) > batch_max_chars
+                ):
+                    err = flush_text_batch(reason="max_chars")
+                    if err:
+                        return err
+
+                text_batch.append(
+                    {
+                        "line_idx": idx,
+                        "chunk_index": idx + 1,
+                        "kind": kind_key,
+                        "page": page,
+                        "part_index": part_index,
+                        "part_total": part_total,
+                        "content": content,
+                    }
                 )
+                text_batch_chars += len(content)
 
-                try:
-                    result = model.invoke([system, prompt])
-                except Exception as exc:
-                    flush_state(done_flag=False)
-                    preview = _read_tail(notes_path, preview_chars)
-                    progress = str(line_offset)
-                    if total_lines:
-                        pct = (line_offset / total_lines) * 100
-                        progress = f"{line_offset}/{total_lines}（{pct:.1f}%）"
-                    return (
-                        f"[已断点保存] DOC_ID: {doc_id}\n"
-                        f"- 已处理到分片行号：{progress}\n"
-                        f"- 本轮累计 steps：{steps}\n"
-                        f"- 当前进度已落盘：{state_path.as_posix()}\n\n"
-                        f"[本次调用遇到错误]\n{exc}\n\n"
-                        f"[累计笔记预览]\n{preview}\n\n"
-                        f"如需继续，请发送：继续解析 DOC_ID: {doc_id}"
-                    )
-
-                delta = result.content if isinstance(result.content, str) else str(result.content)
-                delta = (delta or "").strip()
-                if delta:
-                    header = (
-                        f"\n\n## 分片 {idx + 1}\n"
-                        f"- kind: {kind}\n"
-                        f"- page: {page}\n"
-                        f"- part: {part_index}/{part_total}\n\n"
-                    )
-                    to_write = header + delta + "\n"
-
-                    if notes_max_chars > 0 and notes_path.exists():
-                        try:
-                            if notes_path.stat().st_size > notes_max_chars:
-                                to_write = (
-                                    "\n\n[警告] notes.md 已超过上限，后续增量将不再写入。"
-                                    "如需继续写入，请调大 PDF_ANALYZE_NOTES_MAX_CHARS 或设置为 0。\n"
-                                )
-                        except Exception:
-                            pass
-
-                    with open(notes_path, "a", encoding="utf-8") as out_fp:
-                        out_fp.write(to_write)
-
-                line_offset = idx + 1
-                if flush_every_steps > 0 and steps % flush_every_steps == 0:
-                    flush_state(done_flag=False)
+                # batch_size==1：相当于旧逻辑（每片一调）；batch_size>1：真正批量
+                if batch_size <= 1 or len(text_batch) >= batch_size:
+                    err = flush_text_batch(reason="batch_size")
+                    if err:
+                        return err
 
             else:
+                # for-else：没有 break，说明文件读到结尾
                 done = True
+
+        # 文件读完 / 中途 break 后，都尝试 flush 一次残留缓冲区（把已读入的纯文本分片处理完）
+        err = flush_text_batch(reason="loop_end")
+        if err:
+            return err
 
         if not done:
             try:
